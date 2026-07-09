@@ -1,0 +1,4 @@
+# Sourced by dpibypass. %TCP% / %UDP% are replaced with your configured ports.
+STRATEGY_NAME="QUIC-heavy (Hysteria focus)"
+STRATEGY_DESC="Double fake on UDP/QUIC for Hysteria-style links that the DPI throttles or drops, with a light TCP split kept for VLESS/SS. Use when the UDP leg is the problem."
+STRATEGY_OPT="--filter-udp=%UDP% --filter-l7=quic --lua-desync=fake:blob=fake_default_quic:badsum:strategy=1 --lua-desync=fake:blob=fake_default_quic:badsum:strategy=2 --new --filter-tcp=%TCP% --lua-desync=multisplit:strategy=1"

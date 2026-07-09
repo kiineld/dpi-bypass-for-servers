@@ -1,0 +1,4 @@
+# Sourced by dpibypass. %TCP% / %UDP% are replaced with your configured ports.
+STRATEGY_NAME="Fake + MultiSplit (default)"
+STRATEGY_DESC="Injects a fake TLS packet, then splits the real one. Best all-round starting point; covers VLESS/Reality and Shadowsocks on TCP plus QUIC/Hysteria on UDP."
+STRATEGY_OPT="--filter-tcp=%TCP% --lua-desync=fake:blob=fake_default_tls:badsum:strategy=1 --lua-desync=multisplit:strategy=2 --new --filter-udp=%UDP% --filter-l7=quic --lua-desync=fake:blob=fake_default_quic:badsum:strategy=1"

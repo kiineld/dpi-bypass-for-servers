@@ -1,0 +1,4 @@
+# Sourced by dpibypass. %TCP% / %UDP% are replaced with your configured ports.
+STRATEGY_NAME="TLS-only (Reality-safe)"
+STRATEGY_DESC="Only touches TLS/VLESS-Reality traffic (filter-l7=tls) and leaves raw Shadowsocks packets alone. Use if strategies 01-04 disrupt your Shadowsocks links."
+STRATEGY_OPT="--filter-tcp=%TCP% --filter-l7=tls --lua-desync=fake:blob=fake_default_tls:badsum:strategy=1 --lua-desync=multidisorder:strategy=2"

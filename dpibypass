@@ -1,0 +1,225 @@
+#!/usr/bin/env bash
+# dpi-bypass — try zapret2 DPI-bypass strategies for node-to-node links and
+# lock in the one that works. Wrapper around bol-van/zapret2.
+set -o pipefail
+
+SELF="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+# shellcheck disable=SC1091
+. "$SELF/lib/common.sh"
+# shellcheck disable=SC1091
+. "$SELF/lib/zapret.sh"
+
+# ---- strategy discovery ---------------------------------------------------
+strategy_files() { ls "$STRATEGY_DIR"/*.strategy 2>/dev/null | sort; }
+
+load_strategy() { # $1 = file -> sets STRATEGY_NAME/DESC/OPT
+  STRATEGY_NAME=""; STRATEGY_DESC=""; STRATEGY_OPT=""
+  # shellcheck disable=SC1090
+  . "$1"
+}
+
+# ---- connectivity probe ---------------------------------------------------
+probe() { # $1 = host:port -> 0 if TCP connect succeeds
+  local hp="$1" host port
+  host="${hp%%:*}"; port="${hp##*:}"
+  [ -n "$host" ] && [ -n "$port" ] || return 2
+  timeout 5 bash -c "exec 3<>/dev/tcp/$host/$port" 2>/dev/null
+}
+
+# ---- apply + persist ------------------------------------------------------
+apply_strategy() { # $1 = file  -> writes config, restarts, verifies daemon
+  load_strategy "$1"
+  zap_write_config "$STRATEGY_OPT"
+  zap_restart
+  if zap_daemon_up; then return 0; fi
+  return 1
+}
+
+persist_current() { # $1 = file
+  echo "$(basename "$1")" > "$ACTIVE_FILE"
+  zap_persist
+}
+
+# ---- commands -------------------------------------------------------------
+cmd_list() {
+  step "Available strategies"
+  local i=0 f
+  for f in $(strategy_files); do
+    i=$((i+1)); load_strategy "$f"
+    printf '  %s%2d%s  %s%s%s\n' "$C_BOLD" "$i" "$C_RESET" "$C_CYN" "$STRATEGY_NAME" "$C_RESET"
+    printf '      %s%s%s\n' "$C_DIM" "$STRATEGY_DESC" "$C_RESET"
+  done
+  [ "$i" -eq 0 ] && warn "No strategies found in $STRATEGY_DIR"
+}
+
+cmd_test() {
+  zap_built || die "zapret2 is not built yet. Run: dpibypass install"
+  local files; files="$(strategy_files)"
+  [ -n "$files" ] || die "No strategies in $STRATEGY_DIR"
+
+  step "Testing strategies on ports TCP=$PORTS_TCP UDP=$PORTS_UDP"
+  [ -n "$TEST_TARGET" ] && info "Auto-probe target: $TEST_TARGET" \
+                        || info "No TEST_TARGET set — you'll judge each one manually."
+  echo
+
+  local f n=0 total; total="$(echo "$files" | wc -l | tr -d ' ')"
+  for f in $files; do
+    n=$((n+1)); load_strategy "$f"
+    printf '%s[%d/%d] %s%s\n' "$C_BOLD" "$n" "$total" "$STRATEGY_NAME" "$C_RESET"
+    printf '      %s%s%s\n' "$C_DIM" "$STRATEGY_DESC" "$C_RESET"
+
+    if ! apply_strategy "$f"; then
+      err "nfqws2 did not start with this strategy — likely an unsupported option. Skipping."
+      zap_diag
+      echo; continue
+    fi
+    ok "Strategy active."
+
+    if [ -n "$TEST_TARGET" ]; then
+      if probe "$TEST_TARGET"; then ok "Probe to $TEST_TARGET succeeded."
+      else warn "Probe to $TEST_TARGET failed."; fi
+    fi
+
+    printf '%sKeep this one? [%sy%s]es keep+persist  [%sn%s]ext  [%sq%s]uit: %s' \
+      "$C_BOLD" "$C_GRN" "$C_BOLD" "$C_YEL" "$C_BOLD" "$C_RED" "$C_BOLD" "$C_RESET"
+    read -r ans </dev/tty
+    case "$ans" in
+      y|Y) persist_current "$f"
+           ok "Locked in '${STRATEGY_NAME}'. Node-to-node bypass is live and will survive reboot."
+           return 0 ;;
+      q|Q) warn "Stopped. Current strategy left active but NOT persisted."; return 0 ;;
+      *)   echo ;;
+    esac
+  done
+  warn "Reached the end of the list. If none worked, run: dpibypass blockcheck"
+}
+
+cmd_apply() { # $1 = number or filename
+  zap_built || die "zapret2 is not built yet. Run: dpibypass install"
+  local sel="$1" f=""
+  if [[ "$sel" =~ ^[0-9]+$ ]]; then
+    f="$(strategy_files | sed -n "${sel}p")"
+  else
+    f="$STRATEGY_DIR/$sel"; [ -f "$f" ] || f="$STRATEGY_DIR/$sel.strategy"
+  fi
+  [ -f "$f" ] || die "No such strategy: $sel (see: dpibypass list)"
+  load_strategy "$f"
+  step "Applying '$STRATEGY_NAME'"
+  if apply_strategy "$f"; then
+    persist_current "$f"
+    ok "Active and persisted."
+  else
+    err "nfqws2 failed to start with this strategy."
+    zap_diag; exit 1
+  fi
+}
+
+cmd_status() {
+  step "Status"
+  if zap_daemon_up; then ok "nfqws2 daemon: running"
+  else warn "nfqws2 daemon: not running"; fi
+  if [ -f "$ACTIVE_FILE" ]; then
+    load_strategy "$STRATEGY_DIR/$(cat "$ACTIVE_FILE")" 2>/dev/null
+    info "Active strategy: ${STRATEGY_NAME:-$(cat "$ACTIVE_FILE")}"
+  else
+    info "Active strategy: none recorded"
+  fi
+  info "Ports: TCP=$PORTS_TCP  UDP=$PORTS_UDP"
+  if have systemctl && systemctl is-enabled zapret2 >/dev/null 2>&1; then
+    ok "Boot persistence: enabled (systemd)"
+  else
+    warn "Boot persistence: not enabled"
+  fi
+}
+
+cmd_stop()    { step "Stopping bypass"; zap_stop; ok "Stopped."; }
+cmd_start()   { step "Starting bypass"; zap_restart; zap_daemon_up && ok "Running." || { err "Failed to start."; zap_diag; }; }
+cmd_restart() { cmd_start; }
+cmd_logs()    { zap_diag; }
+cmd_blockcheck() { zap_built || die "Run: dpibypass install"; step "Launching zapret2 blockcheck2 (automated discovery)"; zap_blockcheck; }
+
+cmd_uninstall() {
+  step "Uninstall"
+  printf 'Remove zapret2, the systemd service and firewall rules? [y/N]: '
+  read -r a </dev/tty
+  case "$a" in
+    y|Y) zap_stop; zap_unpersist; rm -f "$ACTIVE_FILE"
+         printf 'Also delete %s (zapret2 source)? [y/N]: ' "$ZAPRET_BASE"; read -r b </dev/tty
+         case "$b" in y|Y) rm -rf "$ZAPRET_BASE";; esac
+         ok "Removed. The dpi-bypass wrapper is still at $SELF (delete manually if desired)." ;;
+    *) info "Cancelled." ;;
+  esac
+}
+
+menu() {
+  while :; do
+    echo
+    printf '%s╔══════════════════════════════════════════╗%s\n' "$C_BLU" "$C_RESET"
+    printf '%s║        dpi-bypass  ·  zapret2 wrapper     ║%s\n' "$C_BLU" "$C_RESET"
+    printf '%s╚══════════════════════════════════════════╝%s\n' "$C_BLU" "$C_RESET"
+    echo "  1) Test strategies (try each until your link works)"
+    echo "  2) Auto-discover with blockcheck2"
+    echo "  3) List strategies"
+    echo "  4) Apply a specific strategy by number"
+    echo "  5) Status"
+    echo "  6) Restart bypass"
+    echo "  7) Stop bypass"
+    echo "  8) View logs"
+    echo "  9) Uninstall"
+    echo "  0) Exit"
+    printf '%sChoose: %s' "$C_BOLD" "$C_RESET"
+    read -r c </dev/tty
+    case "$c" in
+      1) cmd_test ;;
+      2) cmd_blockcheck ;;
+      3) cmd_list ;;
+      4) printf 'Strategy number: '; read -r num </dev/tty; cmd_apply "$num" ;;
+      5) cmd_status ;;
+      6) cmd_restart ;;
+      7) cmd_stop ;;
+      8) cmd_logs ;;
+      9) cmd_uninstall ;;
+      0|q|Q) exit 0 ;;
+      *) warn "Unknown choice" ;;
+    esac
+  done
+}
+
+usage() {
+  cat <<EOF
+${C_BOLD}dpi-bypass${C_RESET} — zapret2 DPI-bypass for node-to-node links
+
+Usage: dpibypass [command]
+
+  (no args)     Interactive menu
+  test          Cycle through strategies until one works, then persist it
+  blockcheck    Run zapret2's automated strategy discovery
+  list          List available strategies
+  apply <n|name> Apply a specific strategy and persist it
+  status        Show daemon / strategy / persistence state
+  start|restart|stop
+  logs          Recent daemon output
+  install       (Re)build zapret2 from source
+  uninstall     Remove service, firewall rules and (optionally) sources
+
+Config: edit $ROOT_DIR/config.env (ports, zapret2 ref, test target).
+EOF
+}
+
+case "${1:-menu}" in
+  menu|"")     require_root "$SELF/dpibypass" menu; menu ;;
+  test)        require_root "$SELF/dpibypass" test; cmd_test ;;
+  blockcheck)  require_root "$SELF/dpibypass" blockcheck; cmd_blockcheck ;;
+  list)        cmd_list ;;
+  apply)       require_root "$SELF/dpibypass" apply "$2"; cmd_apply "$2" ;;
+  status)      cmd_status ;;
+  start)       require_root "$SELF/dpibypass" start; cmd_start ;;
+  restart)     require_root "$SELF/dpibypass" restart; cmd_restart ;;
+  stop)        require_root "$SELF/dpibypass" stop; cmd_stop ;;
+  logs)        cmd_logs ;;
+  install)     require_root "$SELF/dpibypass" install; zap_install; cmd_status ;;
+  install-internal) zap_install; cmd_status ;;
+  uninstall)   require_root "$SELF/dpibypass" uninstall; cmd_uninstall ;;
+  -h|--help|help) usage ;;
+  *)           usage; exit 1 ;;
+esac
