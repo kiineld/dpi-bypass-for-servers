@@ -83,15 +83,28 @@ EOF
 # Is an nfqws2 daemon currently running?
 zap_daemon_up() { pgrep -x nfqws2 >/dev/null 2>&1 || pgrep -f "$NFQWS_BIN" >/dev/null 2>&1; }
 
-# Apply current config now (firewall rules + daemons) via zapret2's own script.
+# Kill any leftover nfqws2 and remove its pidfile. Without this, starting the
+# service while a previous instance is up makes zapret2 report "already running"
+# and the Type=forking unit then deactivates itself — leaving nfqws2 DOWN.
+zap_clean_stale() {
+  "$SYSV" stop >/dev/null 2>&1 || true
+  pkill -x nfqws2 2>/dev/null || true
+  find /run -name '*nfqws*' -delete 2>/dev/null || true
+  sleep 1
+}
+
+# Apply current config now (firewall rules + daemon) via ONE mechanism.
+# Prefer systemd when the unit is installed so we never race sysv against it.
 zap_restart() {
   [ -x "$SYSV" ] || die "zapret2 launcher not found at $SYSV — run install first"
-  "$SYSV" restart >/dev/null 2>&1 || {
-    "$SYSV" stop  >/dev/null 2>&1 || true
+  zap_clean_stale
+  if have systemctl && [ -f /etc/systemd/system/zapret2.service ]; then
+    systemctl restart zapret2 >/dev/null 2>&1
+  else
     "$SYSV" start >/dev/null 2>&1
-  }
+  fi
   # Give the daemon a moment to either come up or crash on bad options.
-  sleep 1
+  sleep 2
 }
 
 zap_stop() {
@@ -110,6 +123,9 @@ zap_persist() {
   install -m 0644 "$UNIT_SRC" /etc/systemd/system/zapret2.service
   systemctl daemon-reload
   systemctl enable zapret2 >/dev/null 2>&1
+  # Clear any sysv-started instance first so systemd's start doesn't collide
+  # with a running daemon ("already running" -> unit self-deactivates).
+  zap_clean_stale
   systemctl restart zapret2
   ok "Enabled zapret2.service — bypass will start on boot."
 }
