@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # dpi-bypass one-line installer.
 #
-#   curl -fsSL https://raw.githubusercontent.com/YOUR_GITHUB/dpi-bypass/main/install.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/kiineld/dpi-bypass-for-servers/main/install.sh | sudo bash
 #
-# or, if your repo differs from the default below:
+# or override the source repo:
 #   DPIBYPASS_REPO=https://github.com/you/dpi-bypass DPIBYPASS_REF=main \
 #     bash <(curl -fsSL https://raw.githubusercontent.com/you/dpi-bypass/main/install.sh)
 set -euo pipefail
 
-# >>> EDIT THIS to your GitHub repo before publishing (or pass DPIBYPASS_REPO) <<<
-DPIBYPASS_REPO="${DPIBYPASS_REPO:-https://github.com/YOUR_GITHUB/dpi-bypass}"
+# Source repo for this wrapper (override with DPIBYPASS_REPO env var).
+DPIBYPASS_REPO="${DPIBYPASS_REPO:-https://github.com/kiineld/dpi-bypass-for-servers}"
 DPIBYPASS_REF="${DPIBYPASS_REF:-main}"
 DEST="${DPIBYPASS_BASE:-/opt/dpi-bypass}"
 

@@ -92,7 +92,7 @@ specific DPI.
 cd dpi-bypass
 git init && git add . && git commit -m "dpi-bypass: zapret2 wrapper"
 # edit DPIBYPASS_REPO in install.sh + the URL in this README to your account
-git remote add origin git@github.com:YOUR_GITHUB/dpi-bypass.git
+git remote add origin git@github.com:kiineld/dpi-bypass-for-servers.git
 git push -u origin main
 ```
 

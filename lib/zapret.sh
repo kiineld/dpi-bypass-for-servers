@@ -19,11 +19,17 @@ zap_install() {
 
   if [ -d "$ZAPRET_BASE/.git" ]; then
     step "Updating zapret2 ($ZAPRET_BASE)"
-    git -C "$ZAPRET_BASE" fetch --depth=1 origin "$ZAPRET_REF" -q || true
-    git -C "$ZAPRET_BASE" reset --hard "origin/$ZAPRET_REF" -q || true
+    git -C "$ZAPRET_BASE" fetch --depth=1 origin "$ZAPRET_REF" -q \
+      || git -C "$ZAPRET_BASE" fetch --depth=1 -q || true
+    git -C "$ZAPRET_BASE" reset --hard "origin/$ZAPRET_REF" -q \
+      || git -C "$ZAPRET_BASE" reset --hard "@{u}" -q || true
   else
-    step "Cloning zapret2 from $ZAPRET_REPO"
-    git clone --depth=1 -b "$ZAPRET_REF" "$ZAPRET_REPO" "$ZAPRET_BASE"
+    step "Cloning zapret2 from $ZAPRET_REPO (ref: $ZAPRET_REF)"
+    # Try the pinned ref; fall back to the repo's default branch so a wrong
+    # ref can never hard-fail the install.
+    git clone --depth=1 -b "$ZAPRET_REF" "$ZAPRET_REPO" "$ZAPRET_BASE" 2>/dev/null \
+      || git clone --depth=1 "$ZAPRET_REPO" "$ZAPRET_BASE" \
+      || die "Failed to clone zapret2 from $ZAPRET_REPO"
   fi
 
   step "Installing build prerequisites (zapret2 install_prereq.sh)"
