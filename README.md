@@ -14,7 +14,7 @@ but for Linux servers and the newer Lua-strategy engine of zapret2.
 ## Install (one line)
 
 ```bash
-curl -fsSL hhttps://raw.githubusercontent.com/kiineld/dpi-bypass-for-servers/refs/heads/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/kiineld/dpi-bypass-for-servers/refs/heads/main/install.sh | sudo bash
 ```
 
 This builds zapret2 from source (needs a compiler; the installer pulls it via
