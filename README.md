@@ -14,7 +14,7 @@ but for Linux servers and the newer Lua-strategy engine of zapret2.
 ## Install (one line)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/YOUR_GITHUB/dpi-bypass/main/install.sh | sudo bash
+curl -fsSL hhttps://raw.githubusercontent.com/kiineld/dpi-bypass-for-servers/refs/heads/main/install.sh | sudo bash
 ```
 
 This builds zapret2 from source (needs a compiler; the installer pulls it via
@@ -23,8 +23,8 @@ into the menu.
 
 > Replace `YOUR_GITHUB` with your account, or pass your repo explicitly:
 > ```bash
-> DPIBYPASS_REPO=https://github.com/you/dpi-bypass \
->   bash <(curl -fsSL https://raw.githubusercontent.com/you/dpi-bypass/main/install.sh)
+> DPIBYPASS_REPO=https://github.com/kiineld/dpi-bypass-for-servers \
+>   bash <(curl -fsSL https://raw.githubusercontent.com/kiineld/dpi-bypass-for-servers/refs/heads/main/install.sh)
 > ```
 
 ## Configure
