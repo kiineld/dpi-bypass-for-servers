@@ -13,9 +13,19 @@ zap_built() { [ -x "$NFQWS_BIN" ] || [ -x "$ZAPRET_BASE/binaries/my/nfqws2" ]; }
 zap_install() {
   export DEBIAN_FRONTEND=noninteractive
 
-  step "Installing base packages"
+  step "Installing build + runtime dependencies"
   apt-get update -qq
-  apt-get install -y -qq git curl ca-certificates >/dev/null
+  # Toolchain + libs required to compile nfqws2 (from zapret2 build_howto_unix),
+  # plus git/curl and the nftables/ipset runtime.
+  apt-get install -y -qq \
+    git curl ca-certificates pkg-config \
+    make gcc zlib1g-dev libcap-dev libnetfilter-queue-dev libmnl-dev libsystemd-dev \
+    nftables ipset >/dev/null \
+    || die "failed to install build dependencies"
+  # LuaJIT dev headers — package name varies across Ubuntu/Debian releases.
+  apt-get install -y -qq libluajit-5.1-dev >/dev/null 2>&1 \
+    || apt-get install -y -qq libluajit2-5.1-dev >/dev/null 2>&1 \
+    || warn "LuaJIT dev package not found under common names — 'make' may fail"
 
   if [ -d "$ZAPRET_BASE/.git" ]; then
     step "Updating zapret2 ($ZAPRET_BASE)"
@@ -32,14 +42,13 @@ zap_install() {
       || die "Failed to clone zapret2 from $ZAPRET_REPO"
   fi
 
-  step "Installing build prerequisites (zapret2 install_prereq.sh)"
-  yes '' | "$ZAPRET_BASE/install_prereq.sh" || warn "install_prereq.sh returned non-zero (often fine)"
+  step "Compiling zapret2 from source (make -C $ZAPRET_BASE systemd)"
+  # install_bin.sh only copies prebuilt binaries (none exist for many VM archs);
+  # the real source build is the top-level Makefile's 'systemd' target.
+  make -C "$ZAPRET_BASE" systemd || die "make failed — see compiler output above"
 
-  step "Building binaries from source (zapret2 install_bin.sh)"
-  "$ZAPRET_BASE/install_bin.sh" || die "install_bin.sh failed — check compiler output above"
-
-  zap_built || die "Build finished but nfqws2 binary not found at $NFQWS_BIN"
-  ok "zapret2 built"
+  zap_built || die "Build finished but nfqws2 binary not found (looked in $NFQWS_BIN and $ZAPRET_BASE/binaries/my/nfqws2)"
+  ok "zapret2 compiled"
 }
 
 # Expand %TCP% / %UDP% placeholders in a strategy's option string.
